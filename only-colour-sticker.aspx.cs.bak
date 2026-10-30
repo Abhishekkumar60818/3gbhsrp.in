@@ -1,0 +1,252 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Web;
+using System.Web.UI;
+using System.Web.UI.WebControls;
+using Newtonsoft.Json;
+using Telerik.Web.Spreadsheet;
+
+public partial class only_colour_sticker : System.Web.UI.Page
+{
+    protected void Page_Load(object sender, EventArgs e)
+    {
+        if (!IsPostBack)
+        {
+            try
+            {
+                pnlVehicleInfo.Visible = true;
+                pnlVehicleDetails.Visible = false;
+                pnlOwnerDetails.Visible = false;
+                pnlFitmentLocation.Visible = false;
+                pnlSummary.Visible = false;
+
+                CityDetails ddataa = new CityDetails();
+                DataSet dstate = ddataa.getDetails("select * from state where status=1 order by name");
+                ddlState.DataSource = dstate;
+                ddlState.DataTextField = "name";
+                ddlState.DataValueField = "id";
+                ddlState.DataBind();
+                ddlState.Items.Insert(0, "---Select state---");
+                ddlState.SelectedIndex = 0;
+
+                DataSet dscat = ddataa.getDetails("select id,type as vtype from vehicletype where status=1 order by vtype");
+                ddlVehicleCatory.DataSource = dscat;
+                ddlVehicleCatory.DataTextField = "vtype";
+                ddlVehicleCatory.DataValueField = "id";
+                ddlVehicleCatory.DataBind();
+                ddlVehicleCatory.Items.Insert(0, "---Select category---");
+                ddlVehicleCatory.SelectedIndex = 0;
+            }
+            catch (Exception ex)
+            {
+
+            }
+        }
+    }
+
+    protected void btnSubmit_Click(object sender, EventArgs e)
+    {
+        try
+        {
+            string apiUrl11 = "https://vahan.parivahan.gov.in/hsrpws/webresources/hsrpwebservice/getHsrpVehicleDetails/";
+            object input11 = new
+            {
+                regnNO = txtRegistrationNumber.Text,
+                chasisNo = txtChasisNumber.Text,
+                userId = "3gbtech2023",
+                engineNo = txtEngineNumber.Text
+
+            };
+
+            var request = WebRequest.Create(apiUrl11);
+
+            System.Net.ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+
+            request.ContentType = "application/json";
+            request.Method = "GET";
+
+            var type = request.GetType();
+            var currentMethod = type.GetProperty("CurrentMethod", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(request);
+
+            var methodType = currentMethod.GetType();
+            methodType.GetField("ContentBodyNotAllowed", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(currentMethod, false);
+
+            using (var streamWriter = new StreamWriter(request.GetRequestStream()))
+            {
+                streamWriter.Write(JsonConvert.SerializeObject(input11));
+            }
+            string abd = "";
+            var response = request.GetResponse();
+            var responseStream = response.GetResponseStream();
+            if (responseStream != null)
+            {
+                var myStreamReader = new StreamReader(responseStream, Encoding.Default);
+                var resultEntity = myStreamReader.ReadToEnd();
+                myStreamReader.ReadToEnd();
+                // lbl1.Text = resultEntity;
+
+                abd = DecryptData(resultEntity, "3GbTech@20238h"); ;
+
+            }
+            responseStream.Close();
+            response.Close();
+            VaahanResultData r = Newtonsoft.Json.JsonConvert.DeserializeObject<VaahanResultData>(abd);
+
+            if (r.message == "Vehicle details available in Vahan")
+            {
+                if (string.IsNullOrEmpty(r.hsrpFrontLaserCode))
+                {
+                    pnlVehicleInfo.Visible = false;
+                    pnlVehicleDetails.Visible = true;
+                    pnlOwnerDetails.Visible = false;
+                    pnlFitmentLocation.Visible = false;
+                    pnlSummary.Visible = false;
+                    lblError.Visible = false;
+                    lblBharatStage.Text = r.norms;
+                    txtRegistrationDate.Text = r.regnDate;
+                    txtFuelType.Text = r.fuel;
+                    txtMaker.Text = r.maker;
+                    txtVehicleType.Text = r.vchType;
+                    txtVehicleType.Text = r.vchCatg;
+                }
+                else
+                {
+                    lblError.Visible = true;
+                    lblError.Text = "* Please order from replacement option";
+                }
+
+            }
+            else
+            {
+                lblError.Visible = true;
+                lblError.Text = "* " + r.message;
+            }
+
+        }
+        catch (Exception ex)
+        {
+            pnlVehicleInfo.Visible = true;
+            pnlVehicleDetails.Visible = false;
+            pnlOwnerDetails.Visible = false;
+            pnlFitmentLocation.Visible = false;
+            pnlSummary.Visible = false;
+            lblError.Visible = true;
+            lblError.Text = ex.Message;
+        }
+    }
+    string DecryptData(string EncryptedText, string Encryptionkey)
+    {
+        RijndaelManaged objrij = new RijndaelManaged();
+        objrij.Mode = CipherMode.CBC;
+        objrij.Padding = PaddingMode.PKCS7;
+        objrij.KeySize = 0x80;
+        objrij.BlockSize = 0x80;
+        byte[] encryptedTextByte = Convert.FromBase64String(EncryptedText);
+        byte[] passBytes = Encoding.UTF8.GetBytes(Encryptionkey);
+        byte[] EncryptionkeyBytes = new byte[0x10];
+        int len = passBytes.Length;
+        if (len > EncryptionkeyBytes.Length)
+        {
+            len = EncryptionkeyBytes.Length;
+        }
+        Array.Copy(passBytes, EncryptionkeyBytes, len);
+        objrij.Key = EncryptionkeyBytes;
+        objrij.IV = EncryptionkeyBytes;
+        //objrij.Padding = PaddingMode.Zeros;
+        byte[] TextByte = objrij.CreateDecryptor().TransformFinalBlock(encryptedTextByte, 0, encryptedTextByte.Length);
+        return Encoding.UTF8.GetString(TextByte);  //it will return readable string
+    }
+    protected void btnNextVehicleDetails_Click(object sender, EventArgs e)
+    {
+        try
+        {
+            pnlVehicleInfo.Visible = false;
+            pnlVehicleDetails.Visible = false;
+            pnlOwnerDetails.Visible = true;
+            pnlFitmentLocation.Visible = false;
+            pnlSummary.Visible = false;
+        }
+        catch (Exception ex)
+        {
+
+        }
+    }
+
+    protected void btnNextOwnerInfo_Click(object sender, EventArgs e)
+    {
+        try
+        {
+            pnlVehicleInfo.Visible = false;
+            pnlVehicleDetails.Visible = false;
+            pnlOwnerDetails.Visible = false;
+            pnlFitmentLocation.Visible = true;
+            pnlSummary.Visible = false;
+            CityDetails ddataa = new CityDetails();
+            DataSet dstate = ddataa.getDetails("select * from city where status=1 and state='" + ddlState.SelectedItem.ToString() + "' order by city");
+            ddlCity.DataSource = dstate;
+            ddlCity.DataTextField = "city";
+            ddlCity.DataValueField = "id";
+            ddlCity.DataBind();
+            ddlCity.Items.Insert(0, "---Select City---");
+            ddlCity.SelectedIndex = 0;
+        }
+        catch (Exception ex)
+        {
+
+        }
+    }
+
+    protected void btnNextFitmentLocation_Click(object sender, EventArgs e)
+    {
+        try
+        {
+            pnlVehicleInfo.Visible = false;
+            pnlVehicleDetails.Visible = false;
+            pnlOwnerDetails.Visible = false;
+            pnlFitmentLocation.Visible = false;
+            pnlSummary.Visible = true;
+        }
+        catch (Exception ex)
+        {
+
+        }
+    }
+
+    protected void btnVerify_Click(object sender, EventArgs e)
+    {
+
+    }
+    protected void ddlCity_SelectedIndexChanged(object sender, EventArgs e)
+    {
+        try
+        {
+            CityDetails ddataa = new CityDetails();
+            DataSet dstate = ddataa.getDetails("select * from distibutor where status=1 and city=" + ddlCity.SelectedValue.ToString() + " order by name");
+            ddlDealer.DataSource = dstate;
+            ddlDealer.DataTextField = "name";
+            ddlDealer.DataValueField = "id";
+            ddlDealer.DataBind();
+            ddlDealer.Items.Insert(0, "---Select Fitment Centre---");
+            ddlDealer.SelectedIndex = 0;
+        }
+        catch { }
+    }
+    protected void ddlDealer_SelectedIndexChanged(object sender, EventArgs e)
+    {
+        try
+        {
+            DistibutorData dd = new DistibutorData(int.Parse(ddlDealer.SelectedValue.ToString()));
+            txtDealInfo.Text = dd.name + ", " + dd.address;
+
+        }
+        catch { }
+    }
+}
